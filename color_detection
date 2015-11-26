@@ -1,0 +1,348 @@
+//以防两边和中间漏检//
+/*
+本程序提供两种新的颜色相似的判断方法，基于卡方分布和偏离程度的方法，可以区分两者的相似程度,比传统的直方图法更加优越，
+更接近眼睛观察到的值
+*/
+#include"color_detect.h"
+#include<math.h>
+void color_detect(Mat dst,vector<vector<square>> &rangesquare,int word_feather[4],int weight)//(word_feather[4]里面分别是高度，宽度，数目，间距)
+{
+for(vector<vector<square>>::iterator ite=rangesquare.begin();ite<rangesquare.end();ite++)
+{
+vector<square> vtemp=*ite;
+float max,min;
+same_detect( dst,vtemp,max,min);
+side_detect( dst,vtemp, word_feather, weight,max,min );
+center_detect(dst,vtemp,word_feather,rangesquare,max,min);
+vtemp.swap(*ite);
+}
+}
+void same_detect(Mat dst,vector<square> &vtemp,float &max,float &min)
+{
+float f1;
+max=0,min=1000000;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end()-1;ite++)
+{
+square s1=*ite;
+Mat p1=picturn(dst,s1);
+vector<clo_det>v1;
+count_gray( p1,v1);
+square s2=*(ite+1);
+Mat p2=picturn(dst,s2);
+vector<clo_det>v2;
+count_gray( p2,v2);
+f1=hsv_detect1(v1, v2);
+if(f1>max)
+max=f1;
+if(f1<min)
+min=f1;
+
+}
+}
+void side_detect(Mat dst,vector<square> &vtemp,int word_feather[4],int weight,float max,float min )
+{
+
+int row_y=0,col_x1=1000,col_x2=0;
+int sum=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end();ite++)
+{
+sum+=ite->squ1.y;
+if(col_x1>ite->squ1.x) 
+col_x1=ite->squ1.x;
+if(col_x2<ite->squ2.x)
+col_x2=ite->squ2.x;
+}
+row_y=sum/vtemp.size();
+int left=0,right=0;
+if(col_x1-word_feather[3]-word_feather[1]>0)//left
+left=col_x1-word_feather[3]-word_feather[1];
+if(col_x2+word_feather[3]+word_feather[1]<weight)
+right=col_x2+word_feather[3]+word_feather[1];
+if(left!=0)
+{
+square s1,s2;
+s1.squ1.x=left;
+s1.squ1.y=row_y;
+s1.squ2.x=left+word_feather[1];
+s1.squ2.y=row_y+word_feather[0];
+Mat p1=picturn(dst,s1);
+//myshow(p1);
+vector<clo_det>v1;
+count_gray( p1,v1);
+int repet_num=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end();ite++)
+{
+/*s1=*(ite+1);//
+p1=picturn(dst,s1);
+vector<clo_det>v1;
+count_gray( p1,v1);
+myshow(p1);//*/
+s2=*ite;
+Mat p2=picturn(dst,s2);
+//myshow(p2);
+vector<clo_det> v2;
+count_gray( p2,v2);
+float f1=hsv_detect1(v1, v2);
+if((f1<max+max/2)&&(f1>min+max/2))
+repet_num++;
+if(repet_num>vtemp.size()/2)
+{
+vtemp.push_back(s1);
+break;
+}
+}
+}
+if(right!=0)
+{
+square s1,s2;
+s1.squ1.x=col_x2+word_feather[3];
+s1.squ1.y=row_y;
+s1.squ2.x=col_x2+word_feather[3]+word_feather[1];
+s1.squ2.y=row_y+word_feather[0];
+Mat p1=picturn(dst,s1);
+vector<clo_det>v1;
+count_gray( p1,v1);
+int repet_num=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end();ite++)
+{
+s2=*ite;
+Mat p2=picturn(dst,s2);
+vector<clo_det> v2;
+count_gray( p2,v2);
+float f1=hsv_detect1( v1, v2);
+if((f1<max+max/2)&&(f1>min+max/2))
+repet_num++;
+if(repet_num>vtemp.size()/2)
+{
+vtemp.push_back(s1);
+break;
+}
+}
+}
+}
+void count_gray(Mat p,vector<clo_det>&v2)
+{
+vector<CvPoint> v1;
+IplImage itemp=p;
+IplImage* img=cvCloneImage(&itemp);
+CvPoint c1;
+c1.x=0;c1.y=0;
+v1.push_back(c1);
+for(int i=0;i<img->height;i++)
+{
+uchar* ptr = (uchar*)img->imageData+i*img->width;
+for(int j=0;j<img->width;j++)
+{
+int nn=ptr[j];
+for(vector<CvPoint>::iterator itest=v1.begin();itest<v1.end();itest++)
+{
+if(nn==itest->x)
+{
+itest->y++;
+break;
+}
+else if(itest==v1.end()-1)
+{
+CvPoint c2;
+c2.x=nn;
+c2.y=1;
+v1.push_back(c2);
+break;
+}	
+else
+{
+continue;
+}
+}
+}
+}
+sort(v1.begin(),v1.end(),c);
+for(int i=0;i<32;i++)
+{
+clo_det cd1;
+cd1.percent=0;
+cd1.p_value=0;
+v2.push_back(cd1);
+}
+for(vector<CvPoint>::iterator ite=v1.begin();ite<v1.end();ite++)
+{
+vector<clo_det>::iterator it=v2.begin();
+if((it+(ite->x/8))->p_value==0)
+{
+(it+(ite->x/8))->p_value=ite->x;
+(it+(ite->x/8))->percent=ite->y/(float)(img->width*img->height);
+}
+else
+{
+(it+(ite->x/8))->percent=(it+(ite->x/8))->percent+ite->y/(float)(img->width*img->height);
+}
+}
+}
+void center_detect(Mat dst,vector<square> &vtemp,int word_feather[4],vector<vector<square>> &rangesquare,float max,float min)
+{
+square s1,s2;
+int col_x1=1000,col_x2=0;
+int sum=0,row_y=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end();ite++)
+{
+sum+=ite->squ1.y;
+if(col_x1>ite->squ1.x) 
+col_x1=ite->squ1.x;
+if(col_x2<ite->squ2.x)
+col_x2=ite->squ2.x;
+}
+row_y=sum/vtemp.size();
+sort(vtemp.begin(),vtemp.begin()+vtemp.size(),cmpc);
+int *p=new int[vtemp.size()];
+int i=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end()-1;ite++)
+p[i++]=(ite+1)->squ1.x-ite->squ1.x;
+int lost_num=0;
+for(int i=0;i<vtemp.size()-1;i++)
+{
+if(p[i]>=2*(word_feather[1]+word_feather[3]))
+{
+lost_num=p[i]/(word_feather[1]+word_feather[3]);
+switch (lost_num)
+{
+case 1: break;
+case 2 : 
+{/////漏检了一个文字
+s1.squ1.x=vtemp.at(i).squ2.x+word_feather[3];
+s1.squ1.y=row_y;
+s1.squ2.x=s1.squ1.x+word_feather[1];
+s1.squ2.y=s1.squ1.y+word_feather[0];
+Mat p1=picturn(dst,s1);
+int repet_num=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end();ite++)
+{
+s2=*ite;
+Mat p2=picturn(dst,s2);
+float f1=hsv_detect( p1, p2);
+if(f1<0.4)
+repet_num++;
+if(repet_num>vtemp.size()/2)
+{
+vtemp.push_back(s1);
+break;
+}
+}
+break;
+}
+case 3: 
+{/////漏检了两个文字
+s1.squ1.x=vtemp.at(i).squ2.x+word_feather[3];
+s1.squ1.y=row_y;
+s1.squ2.x=s1.squ1.x+word_feather[1];
+s1.squ2.y=s1.squ1.y+word_feather[0];
+Mat p1=picturn(dst,s1);
+int repet_num=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end();ite++)
+{
+s2=*ite;
+Mat p2=picturn(dst,s2);
+float f1=hsv_detect( p1, p2);
+if(f1<0.4)
+repet_num++;
+if(repet_num>vtemp.size()/2)
+{
+vtemp.push_back(s1);
+break;
+}
+}
+s1.squ1.x=vtemp.at(i).squ2.x+2*word_feather[3]+word_feather[1];
+s1.squ1.y=row_y;
+s1.squ2.x=s1.squ1.x+word_feather[1];
+s1.squ2.y=s1.squ1.y+word_feather[0];
+p1=picturn(dst,s1);
+repet_num=0;
+for(vector<square>::iterator ite=vtemp.begin();ite<vtemp.end();ite++)
+{
+s2=*ite;
+Mat p2=picturn(dst,s2);
+float f1=hsv_detect( p1, p2);
+if(f1<0.4)
+repet_num++;
+if(repet_num>vtemp.size()/2)
+{
+vtemp.push_back(s1);
+break;
+}
+}
+break;
+}
+default: 
+{
+int sizenum=0;
+for(int j=i+1;j<sizeof(p)/sizeof(int)-1;j++)
+{
+int sizetemp=vtemp.at(j+1).squ1.x-vtemp.at(j).squ1.x;
+if(sizetemp>word_feather[1])
+sizenum++;
+}
+if(sizenum<1)
+vtemp.erase(vtemp.begin()+i+1,vtemp.end());
+else//另外存一组
+{
+vector<square> v1;
+for(vector<square>::iterator ite=vtemp.begin()+i+1;ite<vtemp.end();ite++)
+{
+v1.push_back(*ite);
+}
+rangesquare.push_back(v1);
+}
+break;
+}
+}
+}
+
+}
+delete p;
+}
+bool c(CvPoint c1,CvPoint c2)
+{
+if(c1.y!=c2.y) return(c1.y-c2.y>0);
+else return(c1.y-c2.y>0);	
+}
+bool cmpc(square s1,square s2)//排序条件
+{
+if(s1.squ1.x!=s2.squ1.x) return (s1.squ1.x-s2.squ1.x<0);
+else return (s1.squ1.x-s2.squ1.x<0);
+}
+float hsv_detect(vector<clo_det> v1,vector<clo_det> v2)//相关系数法
+{
+float av1=0,av2=0;
+for(vector<clo_det>::iterator ite=v1.begin();ite<v1.end();ite++)
+av1=av1+ite->percent*ite->p_value;
+for(vector<clo_det>::iterator ite=v2.begin();ite<v2.end();ite++)
+av2=av2+ite->percent*ite->p_value;
+float sum1=0,sum2=0,sum3=0;
+for(int i=0;i<32;i++)
+{
+sum1=sum1+((v1.begin()+i)->p_value-av1)*((v2.begin()+i)->p_value-av2);
+t1(vector<clo_det> v1,vector<clo_det> v2)//卡方检测
+{
+float av1=0;
+for(int i=0;i<32;i++)
+{
+if(((v1.begin()+i)->percent*(v1.begin()+i)->p_value+(v2.begin()+i)->percent*(v2.begin()+i)->p_value)==0)
+continue;
+av1=av1+abs((v1.begin()+i)->percent*(v1.begin()+i)->p_value-(v2.begin()+i)->percent*(v2.begin()+i)->p_value)/((v1.begin()+i)->percent*(v1.begin()+i)->p_value+(v2.begin()+i)->percent*(v2.begin()+i)->p_value);
+}
+return(av1);
+}
+float hsv_detect2(vector<clo_det> v1,vector<clo_det> v2)//偏离程度检测
+{
+float departure=0;
+for(int i=0;i<32;i++)
+{
+departure=departure+(((v1.begin()+i)->percent*(v1.begin()+i)->p_value-(v2.begin()+i)->percent*(v2.begin()+i)->p_value)*((v1.begin()+i)->percent*(v1.begin()+i)->p_value-(v2.begin()+i)->percent*(v2.begin()+i)->p_value));
+}
+float av1=0,av2=0;
+for(vector<clo_det>::iterator ite=v1.begin();ite<v1.end();ite++)
+av1=av1+ite->percent*ite->p_value;
+for(vector<clo_det>::iterator ite=v2.begin();ite<v2.end();ite++)
+av2=av2+ite->percent*ite->p_value;
+float a=departure/((av1*av1)+(av2*av2));
+return(a);
+}
